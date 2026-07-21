@@ -44,7 +44,15 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI)
+const mongoURI = process.env.MONGODB_URI || process.env.MongoURL;
+
+if (!mongoURI) {
+  console.error('CRITICAL ERROR: MongoDB connection URI is not defined.');
+  console.error('Please configure MONGODB_URI or MongoURL in your environment variables (e.g., in your Render dashboard or local .env file).');
+  process.exit(1);
+}
+
+mongoose.connect(mongoURI)
   .then(() => {
     console.log('Successfully connected to MongoDB.');
     setupOrderListener();
@@ -53,6 +61,7 @@ mongoose.connect(process.env.MONGODB_URI)
     console.error('MongoDB connection error:', err);
     process.exit(1);
   });
+
 
 // Schema definition matching the "deliveryboyusers" collection exactly
 const userSchema = new mongoose.Schema(
@@ -776,16 +785,39 @@ app.post('/api/acceptedbydeliveries/:id/complete', async (req, res) => {
       const deliveryCharge = Number(order.deliveryCharge || 0);
 
       if (deliveryBoyId) {
+        let accountNumber = '';
+        let ifscCode = '';
+        try {
+          const boyProfile = await User.findById(deliveryBoyId).lean();
+          if (boyProfile) {
+            accountNumber = boyProfile.accountNumber || '';
+            ifscCode = boyProfile.ifscCode || '';
+          }
+        } catch (profileErr) {
+          console.error('Error fetching delivery boy bank details on order completion:', profileErr);
+        }
+
         await db.collection('pendingpaymentsofdeliveryboy').updateOne(
-          { userid: deliveryBoyId },
+          { 
+            $or: [
+              { userid: deliveryBoyId },
+              { deliveryBoyId: deliveryBoyId }
+            ]
+          },
           {
             $set: {
               userid: deliveryBoyId,
+              deliveryBoyId: deliveryBoyId,
               name: deliveryBoyName,
-              phonenumber: deliveryBoyPhone
+              deliveryBoyName: deliveryBoyName,
+              phonenumber: deliveryBoyPhone,
+              deliveryBoyPhone: deliveryBoyPhone,
+              accountNumber: accountNumber,
+              ifscCode: ifscCode
             },
             $inc: {
-              deliverycharges: deliveryCharge
+              deliverycharges: deliveryCharge,
+              deliveryCharge: deliveryCharge
             }
           },
           { upsert: true }
