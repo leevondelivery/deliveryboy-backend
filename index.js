@@ -49,6 +49,16 @@ let mongoURI = process.env.MONGODB_URI || process.env.MongoURL;
 if (mongoURI) {
   // Clean up whitespace and any surrounding quotes that might have been copied/pasted accidentally
   mongoURI = mongoURI.trim().replace(/^["']|["']$/g, '');
+
+  // Strip accidental key prefixes from the value
+  if (mongoURI.startsWith('MongoURL=')) {
+    mongoURI = mongoURI.substring('MongoURL='.length);
+  } else if (mongoURI.toUpperCase().startsWith('MONGODB_URI=')) {
+    mongoURI = mongoURI.substring('MONGODB_URI='.length);
+  }
+
+  // Clean up whitespace and quotes again
+  mongoURI = mongoURI.trim().replace(/^["']|["']$/g, '');
 }
 
 if (!mongoURI) {
