@@ -44,11 +44,23 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB Connection
-const mongoURI = process.env.MONGODB_URI || process.env.MongoURL;
+let mongoURI = process.env.MONGODB_URI || process.env.MongoURL;
+
+if (mongoURI) {
+  // Clean up whitespace and any surrounding quotes that might have been copied/pasted accidentally
+  mongoURI = mongoURI.trim().replace(/^["']|["']$/g, '');
+}
 
 if (!mongoURI) {
   console.error('CRITICAL ERROR: MongoDB connection URI is not defined.');
   console.error('Please configure MONGODB_URI or MongoURL in your environment variables (e.g., in your Render dashboard or local .env file).');
+  process.exit(1);
+}
+
+if (!mongoURI.startsWith('mongodb://') && !mongoURI.startsWith('mongodb+srv://')) {
+  console.error('CRITICAL ERROR: Invalid MongoDB connection URI format.');
+  console.error(`Expected it to start with "mongodb://" or "mongodb+srv://", but got: "${mongoURI.substring(0, 15)}..."`);
+  console.error('Please check your environment variables in the Render dashboard and make sure it is configured correctly.');
   process.exit(1);
 }
 
@@ -61,6 +73,7 @@ mongoose.connect(mongoURI)
     console.error('MongoDB connection error:', err);
     process.exit(1);
   });
+
 
 
 // Schema definition matching the "deliveryboyusers" collection exactly
