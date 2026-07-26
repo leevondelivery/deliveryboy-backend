@@ -103,7 +103,7 @@ const userSchema = new mongoose.Schema(
     accountNumber: { type: String },
     ifscCode: { type: String },
     isActive: { type: Boolean, default: false }, // Syncs active/inactive state
-    pushToken: { type: String }, // For FCM push notifications
+    pushToken: { type: String }, // For FCM push notificat
   },
   { 
     timestamps: true, // Handles createdAt and updatedAt automatically
