@@ -614,40 +614,22 @@ app.post('/api/acceptedorders/:id/accept', async (req, res) => {
       return res.status(409).json({ message: 'Order has already been accepted by another delivery partner' });
     }
 
-    // Prepare document for acceptedbydeliveries collection
+    // Prepare document for acceptedbydeliveries collection preserving ALL order fields
     const acceptedOrderDoc = {
+      ...order,
       originalOrderId: order._id.toString(),
-      orderId: order.orderId,
       deliveryBoyId,
       deliveryBoyName,
       deliveryBoyPhone,
-      userId: order.userId,
-      restaurantId: order.restaurantId,
-      userName: order.userName,
-      userEmail: order.userEmail,
-      userPhone: order.userPhone,
-      items: order.items,
-      totalCount: order.totalCount,
-      totalPrice: order.totalPrice,
-      deliveryCharge: order.deliveryCharge ?? order.deliveryFee ?? 0,
       deliveryFee: order.deliveryFee ?? order.deliveryCharge ?? 0,
+      deliveryCharge: order.deliveryCharge ?? order.deliveryFee ?? 0,
       deliveryDistance: order.deliveryDistance ?? order.distance ?? (order.location && typeof order.location === 'object' ? order.location.distanceText : null),
-      grandTotal: order.grandTotal,
-      aa: order.aa,
-      location: order.location,
-      deliveryAddress: order.deliveryAddress,
-      paymentStatus: order.paymentStatus,
-      razorpayOrderId: order.razorpayOrderId,
-      razorpayPaymentId: order.razorpayPaymentId,
-      orderDate: order.orderDate,
+      userCoordinates: order.userCoordinates || order.location,
       status: 'Accepted by Delivery',
-      rest: order.rest,
-      restaurantName: order.restaurantName,
-      restaurantLocation: order.restaurantLocation,
       acceptedAt: new Date(),
-      createdAt: new Date(),
       updatedAt: new Date()
     };
+    delete acceptedOrderDoc._id; // Remove original _id so MongoDB creates a new unique ObjectId for acceptedbydeliveries
 
     // Insert into acceptedbydeliveries
     await db.collection('acceptedbydeliveries').insertOne(acceptedOrderDoc);
