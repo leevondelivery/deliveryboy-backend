@@ -629,8 +629,9 @@ app.post('/api/acceptedorders/:id/accept', async (req, res) => {
       items: order.items,
       totalCount: order.totalCount,
       totalPrice: order.totalPrice,
-      gst: order.gst,
-      deliveryCharge: order.deliveryCharge,
+      deliveryCharge: order.deliveryCharge ?? order.deliveryFee ?? 0,
+      deliveryFee: order.deliveryFee ?? order.deliveryCharge ?? 0,
+      deliveryDistance: order.deliveryDistance ?? order.distance ?? (order.location && typeof order.location === 'object' ? order.location.distanceText : null),
       grandTotal: order.grandTotal,
       aa: order.aa,
       location: order.location,
@@ -894,7 +895,7 @@ async function sendFCMToActiveDeliveryBoys(order) {
     const message = {
       notification: {
         title: 'New Order Available!',
-        body: `New order from ${order.restaurantName || 'Restaurant'} is available. Delivery Fee: ₹${order.deliveryCharge || 0}`,
+        body: `New order from ${order.restaurantName || 'Restaurant'} is available. Delivery Fee: ₹${order.deliveryFee ?? order.deliveryCharge ?? 0}`,
       },
       android: {
         priority: 'high',
