@@ -8,32 +8,49 @@ const fs = require('fs');
 const path = require('path');
 
 // Initialize Firebase Admin SDK
-try {
-  const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
-  if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY
-      .replace(/^"|"$/g, '')
-      .replace(/\\n/g, '\n');
-    admin.initializeApp({
-      credential: admin.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: privateKey,
-      })
-    });
-    console.log('Firebase Admin SDK initialized successfully via environment variables.');
-  } else if (fs.existsSync(serviceAccountPath)) {
-    const serviceAccount = require(serviceAccountPath);
-    admin.initializeApp({
-      credential: admin.cert(serviceAccount)
-    });
-    console.log('Firebase Admin SDK initialized successfully via serviceAccountKey.json.');
-  } else {
-    console.warn('Firebase credentials not found (neither in environment variables nor serviceAccountKey.json). Push notifications will not work.');
+function initFirebaseAdmin() {
+  if (admin.apps.length > 0) return true;
+  try {
+    const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+      const serviceAccount = JSON.parse(rawJson);
+      admin.initializeApp({
+        credential: admin.cert(serviceAccount)
+      });
+      console.log('Firebase Admin SDK initialized successfully via FIREBASE_SERVICE_ACCOUNT env var.');
+      return true;
+    } else if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+      const privateKey = process.env.FIREBASE_PRIVATE_KEY
+        .replace(/^"|"$/g, '')
+        .replace(/\\n/g, '\n');
+      admin.initializeApp({
+        credential: admin.cert({
+          projectId: process.env.FIREBASE_PROJECT_ID,
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          privateKey: privateKey,
+        })
+      });
+      console.log('Firebase Admin SDK initialized successfully via individual env vars.');
+      return true;
+    } else if (fs.existsSync(serviceAccountPath)) {
+      const serviceAccount = require(serviceAccountPath);
+      admin.initializeApp({
+        credential: admin.cert(serviceAccount)
+      });
+      console.log('Firebase Admin SDK initialized successfully via serviceAccountKey.json.');
+      return true;
+    } else {
+      console.warn('Firebase credentials not found (neither in environment variables nor serviceAccountKey.json). Push notifications will not work.');
+      return false;
+    }
+  } catch (error) {
+    console.error('Error initializing Firebase Admin SDK:', error);
+    return false;
   }
-} catch (error) {
-  console.error('Error initializing Firebase Admin SDK:', error);
 }
+
+initFirebaseAdmin();
 
 
 const app = express();
@@ -106,7 +123,7 @@ const userSchema = new mongoose.Schema(
     pushToken: { type: String }, // For FCM push notificat
   },
   { 
-    timestamps: true, // Handles createdAt and updatedAt automatically
+    timestamps: true, // Hndles createdAt and updatedAt automatically
     collection: 'deliveryboyusers' // Forces Mongoose to use the exact collection name
   }
 );
@@ -860,6 +877,10 @@ app.get('/api/deliveryboy/:id/reviews', async (req, res) => {
 // Function to send FCM notification to all active delivery partners
 async function sendFCMToActiveDeliveryBoys(order) {
   try {
+    if (!initFirebaseAdmin()) {
+      console.warn('Firebase Admin SDK is not initialized. Skipping push notification.');
+      return;
+    }
     // Find all active delivery boy users who have registered a push token
     const activeUsers = await User.find({
       isActive: true,
