@@ -9,7 +9,7 @@ const path = require('path');
 
 // Initialize Firebase Admin SDK
 function initFirebaseAdmin() {
-  if (admin.apps.length > 0) return true;
+  if (admin.apps && admin.apps.length > 0) return true;
   try {
     const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
