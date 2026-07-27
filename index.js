@@ -7,10 +7,14 @@ const { getMessaging } = require('firebase-admin/messaging');
 const fs = require('fs');
 const path = require('path');
 
+const { getApps } = require('firebase-admin/app');
+
 // Initialize Firebase Admin SDK
 function initFirebaseAdmin() {
-  if (admin.apps && admin.apps.length > 0) return true;
   try {
+    if ((typeof getApps === 'function' && getApps().length > 0) || (admin.apps && admin.apps.length > 0)) {
+      return true;
+    }
     const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
       const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
@@ -45,6 +49,9 @@ function initFirebaseAdmin() {
       return false;
     }
   } catch (error) {
+    if (error.code === 'app/duplicate-app' || error.code === 'app/invalid-app-options' || (error.message && error.message.includes('already exists'))) {
+      return true;
+    }
     console.error('Error initializing Firebase Admin SDK:', error);
     return false;
   }
