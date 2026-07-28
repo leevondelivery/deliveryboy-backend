@@ -281,7 +281,7 @@ app.post('/api/deliveryboy/reset-password', async (req, res) => {
     const user = await User.findOneAndUpdate(
       getPhoneQuery(phone),
       { password: newPassword },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!user) {
@@ -374,7 +374,7 @@ app.put('/api/users/:id/status', async (req, res) => {
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { isActive },
-      { new: true } // Returns the updated document
+      { returnDocument: 'after' } // Returns the updated document
     );
 
     if (!user) {
@@ -399,7 +399,7 @@ app.put('/api/users/:id/push-token', async (req, res) => {
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { pushToken },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!user) {
@@ -420,8 +420,8 @@ app.put('/api/users/:id/push-token', async (req, res) => {
 app.get('/api/diagnose-fcm', async (req, res) => {
   try {
     const activeUsers = await User.find({
-      isActive: true,
-      pushToken: { $exists: true, $ne: '' }
+      $or: [{ isActive: true }, { isActive: 'true' }],
+      pushToken: { $exists: true, $ne: null, $ne: '' }
     });
 
     const initializationStatus = admin.getApps().length > 0 ? 'Initialized' : 'Not Initialized';
@@ -892,22 +892,26 @@ async function sendFCMToActiveDeliveryBoys(order) {
     }
     // Find all active delivery boy users who have registered a push token
     const activeUsers = await User.find({
-      isActive: true,
-      pushToken: { $exists: true, $ne: '' }
+      $or: [{ isActive: true }, { isActive: 'true' }],
+      pushToken: { $exists: true, $ne: null, $ne: '' }
     });
 
     if (activeUsers.length === 0) {
-      console.log('No active delivery partners with registered push tokens found.');
+      console.log('No active delivery partners with registered push tokens found in DB.');
       return;
     }
 
-    const tokens = [...new Set(activeUsers.map(user => user.pushToken))];
+    const tokens = [...new Set(activeUsers.map(user => user.pushToken).filter(Boolean))];
     console.log(`Sending new order notification to ${tokens.length} active delivery partners.`);
 
     const message = {
       notification: {
         title: 'New Order Available!',
         body: `New order from ${order.restaurantName || 'Restaurant'} is available. Delivery Fee: ₹${order.deliveryFee ?? order.deliveryCharge ?? 0}`,
+      },
+      data: {
+        orderId: String(order.orderId || order._id || ''),
+        type: 'NEW_ORDER'
       },
       android: {
         priority: 'high',
@@ -930,16 +934,17 @@ async function sendFCMToActiveDeliveryBoys(order) {
 
     // Send using FCM admin SDK (sendEachForMulticast)
     const response = await getMessaging().sendEachForMulticast(message);
-    console.log(`Successfully sent ${response.successCount} messages; ${response.failureCount} failed.`);
+    console.log(`FCM Multicast Result: ${response.successCount} succeeded; ${response.failureCount} failed.`);
     
-    // Optionally clean up invalid tokens if they failed
+    // Log detailed failure reason and clean up stale tokens
     if (response.failureCount > 0) {
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
           const error = resp.error;
-          if (error && (error.code === 'messaging/registration-token-not-registered' || error.code === 'messaging/invalid-registration-token')) {
-            const badToken = tokens[idx];
-            console.log(`Cleaning up invalid token: ${badToken}`);
+          console.error(`❌ FCM Delivery Failure for token #${idx + 1}:`, error ? (error.message || error.code) : 'Unknown error');
+          const badToken = tokens[idx];
+          if (badToken) {
+            console.log(`Cleaning up stale/invalid token from DB: ${badToken}`);
             User.updateOne({ pushToken: badToken }, { $unset: { pushToken: 1 } })
               .catch(err => console.error('Failed to clean up invalid token:', err));
           }
