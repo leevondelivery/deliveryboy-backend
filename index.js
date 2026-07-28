@@ -250,6 +250,42 @@ app.post('/api/deliveryboy/signup', async (req, res) => {
   }
 });
 
+// Check if phone or email already exists before sending OTP during signup
+app.post('/api/deliveryboy/check-existing', async (req, res) => {
+  try {
+    const { phone, email } = req.body;
+    if (!phone) {
+      return res.status(400).json({ exists: false, message: 'Phone number is required' });
+    }
+
+    const existingRegisteredUser = await User.findOne(getPhoneQuery(phone));
+    if (existingRegisteredUser) {
+      return res.status(200).json({ exists: true, message: 'This phone number is already registered. Please log in.' });
+    }
+
+    const existingPendingUser = await PendingUser.findOne(getPhoneQuery(phone));
+    if (existingPendingUser) {
+      return res.status(200).json({ exists: true, message: 'A registration request with this phone number is already pending admin approval.' });
+    }
+
+    if (email) {
+      const existingEmail = await User.findOne({ email });
+      if (existingEmail) {
+        return res.status(200).json({ exists: true, message: 'This email address is already registered.' });
+      }
+      const existingPendingEmail = await PendingUser.findOne({ email });
+      if (existingPendingEmail) {
+        return res.status(200).json({ exists: true, message: 'A registration request with this email is already pending admin approval.' });
+      }
+    }
+
+    return res.status(200).json({ exists: false, message: 'Available' });
+  } catch (error) {
+    console.error('Check existing error:', error);
+    return res.status(500).json({ exists: false, message: 'Internal server error' });
+  }
+});
+
 // Check if phone number exists in deliveryboyusers collection
 app.post('/api/deliveryboy/check-phone', async (req, res) => {
   try {
