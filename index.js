@@ -439,6 +439,8 @@ app.get('/api/diagnose-fcm', async (req, res) => {
           notification: {
             sound: 'ordernotification',
             channelId: 'order_notifications',
+            icon: 'ic_notification',
+            largeIcon: 'ic_launcher'
           }
         },
         apns: {
@@ -912,6 +914,8 @@ async function sendFCMToActiveDeliveryBoys(order) {
         notification: {
           sound: 'ordernotification',
           channelId: 'order_notifications',
+          icon: 'ic_notification',
+          largeIcon: 'ic_launcher'
         }
       },
       apns: {
