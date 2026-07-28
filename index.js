@@ -953,7 +953,9 @@ async function sendFCMToActiveDeliveryBoys(order) {
         notification: {
           sound: 'ordernotification',
           channelId: 'order_notifications',
-          icon: 'ic_notification'
+          icon: 'ic_notification',
+          priority: 'max',
+          visibility: 'public'
         }
       },
       apns: {
