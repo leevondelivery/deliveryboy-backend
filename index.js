@@ -6,6 +6,7 @@ const admin = require('firebase-admin');
 const { getMessaging } = require('firebase-admin/messaging');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const { getApps } = require('firebase-admin/app');
 
@@ -127,7 +128,8 @@ const userSchema = new mongoose.Schema(
     accountNumber: { type: String },
     ifscCode: { type: String },
     isActive: { type: Boolean, default: false }, // Syncs active/inactive state
-    pushToken: { type: String }, // For FCM push notificat
+    pushToken: { type: String }, // For FCM push notification
+    currentSessionId: { type: String }, // For single-device session enforcement
   },
   { 
     timestamps: true, // Hndles createdAt and updatedAt automatically
@@ -209,13 +211,15 @@ app.post('/api/deliveryboy/signup', async (req, res) => {
       return res.status(400).json({ message: 'A registration request with this phone number is already pending admin approval.' });
     }
 
-    // Check email if provided
-    if (email) {
-      const existingEmail = await User.findOne({ email });
+    // Check email if provided (case-insensitive search)
+    const normalizedEmail = email ? email.trim().toLowerCase() : '';
+    if (normalizedEmail) {
+      const emailQuery = { email: new RegExp(`^${normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') };
+      const existingEmail = await User.findOne(emailQuery);
       if (existingEmail) {
         return res.status(400).json({ message: 'Email address is already registered.' });
       }
-      const existingPendingEmail = await PendingUser.findOne({ email });
+      const existingPendingEmail = await PendingUser.findOne(emailQuery);
       if (existingPendingEmail) {
         return res.status(400).json({ message: 'A registration request with this email is already pending admin approval.' });
       }
@@ -224,7 +228,7 @@ app.post('/api/deliveryboy/signup', async (req, res) => {
     // Create a new pending user document
     const pendingUser = new PendingUser({
       name,
-      email,
+      email: normalizedEmail,
       password,
       phone,
       firebaseUid,
@@ -268,12 +272,14 @@ app.post('/api/deliveryboy/check-existing', async (req, res) => {
       return res.status(200).json({ exists: true, message: 'A registration request with this phone number is already pending admin approval.' });
     }
 
-    if (email) {
-      const existingEmail = await User.findOne({ email });
+    const normalizedEmail = email ? email.trim().toLowerCase() : '';
+    if (normalizedEmail) {
+      const emailQuery = { email: new RegExp(`^${normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') };
+      const existingEmail = await User.findOne(emailQuery);
       if (existingEmail) {
         return res.status(200).json({ exists: true, message: 'This email address is already registered.' });
       }
-      const existingPendingEmail = await PendingUser.findOne({ email });
+      const existingPendingEmail = await PendingUser.findOne(emailQuery);
       if (existingPendingEmail) {
         return res.status(200).json({ exists: true, message: 'A registration request with this email is already pending admin approval.' });
       }
@@ -331,7 +337,40 @@ app.post('/api/deliveryboy/reset-password', async (req, res) => {
   }
 });
 
-// Login Endpoint
+// Helper to send FCM push notification
+const sendPushNotification = async (token, title, body) => {
+  if (!token || !admin.apps || !admin.apps.length) return;
+  try {
+    const message = {
+      token: token,
+      notification: {
+        title: title,
+        body: body,
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          channelId: 'order_notifications',
+          icon: 'ic_notification'
+        }
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+          },
+        },
+      },
+    };
+    await getMessaging().send(message);
+    console.log(`Push notification sent to token: ${token.substring(0, 10)}...`);
+  } catch (err) {
+    console.error('Error sending push notification:', err.message);
+  }
+};
+
+// Login Endpoint - Single Device Session Enforcement & Dual Notifications
 app.post('/api/login', async (req, res) => {
   try {
     const { phone, password } = req.body;
@@ -351,15 +390,35 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ message: 'incorrect id and password', errorType: 'INCORRECT_PASSWORD' });
     }
 
-    // Success response returning requested fields
+    // Single-device session management: generate new unique session ID
+    const newSessionId = crypto.randomUUID();
+    const previousPushToken = user.pushToken;
+
+    // 1. Send Push Notification to Device A (old device) informing them of automatic logout
+    if (previousPushToken) {
+      sendPushNotification(
+        previousPushToken,
+        '⚠️ Account Logged Out',
+        'Your account was logged in from another device.'
+      ).catch(err => console.error('Failed to notify old device on logout:', err));
+    }
+
+    // 2. Update user record in MongoDB with new sessionId
+    const updatedUser = await User.findByIdAndUpdate(
+      user._id,
+      { $set: { currentSessionId: newSessionId } },
+      { returnDocument: 'after' }
+    );
+
     return res.status(200).json({
       message: 'Login successful',
+      sessionId: newSessionId,
       user: {
-        _id: user._id,
-        name: user.name,
-        phone: user.phone,
-        isActive: user.isActive,
-        updatedAt: user.updatedAt,
+        _id: updatedUser._id,
+        name: updatedUser.name,
+        phone: updatedUser.phone,
+        isActive: updatedUser.isActive,
+        updatedAt: updatedUser.updatedAt,
       }
     });
   } catch (error) {
@@ -407,6 +466,18 @@ app.put('/api/users/:id/status', async (req, res) => {
       return res.status(400).json({ message: 'isActive field is required and must be a boolean' });
     }
 
+    // Block going offline if delivery boy has an active order
+    if (isActive === false) {
+      const db = mongoose.connection.db;
+      const activeOrder = await db.collection('acceptedbydeliveries').findOne({ deliveryBoyId: req.params.id });
+      if (activeOrder) {
+        return res.status(400).json({
+          message: 'Cannot go offline while you have an active order. Please complete your order first.',
+          hasActiveOrder: true
+        });
+      }
+    }
+
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { isActive },
@@ -442,6 +513,15 @@ app.put('/api/users/:id/push-token', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    // 2. Send Push Notification to Device B (new device) confirming successful login
+    if (pushToken) {
+      sendPushNotification(
+        pushToken,
+        '🟢 Logged In Successfully',
+        'Welcome! Your account is active on this device.'
+      ).catch(err => console.error('Failed to notify new device on login:', err));
+    }
+
     return res.status(200).json({
       message: 'Push token updated successfully',
       pushToken: user.pushToken,
@@ -449,6 +529,34 @@ app.put('/api/users/:id/push-token', async (req, res) => {
   } catch (error) {
     console.error('Update user push token error:', error);
     return res.status(500).json({ message: 'Internal server error', error: error.message });
+  }
+});
+
+// Verify Session Endpoint - Enforces single-device session check
+app.post('/api/verify-session', async (req, res) => {
+  try {
+    const { userid, sessionId } = req.body;
+    if (!userid || !sessionId) {
+      return res.status(400).json({ success: false, message: 'userid and sessionId are required' });
+    }
+
+    const user = await User.findById(userid);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (user.currentSessionId && user.currentSessionId !== sessionId) {
+      return res.status(401).json({
+        success: false,
+        code: 'SESSION_EXPIRED',
+        message: 'Your account was logged in from another device.'
+      });
+    }
+
+    return res.status(200).json({ success: true, message: 'Session valid' });
+  } catch (error) {
+    console.error('Verify session error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
