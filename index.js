@@ -839,6 +839,33 @@ app.post('/api/acceptedbydeliveries/:id/complete', async (req, res) => {
   }
 });
 
+// Fetch pending payments for a delivery boy
+app.get('/api/deliveryboy/:id/pendingpayments', async (req, res) => {
+  try {
+    const deliveryBoyId = req.params.id;
+    const db = mongoose.connection.db;
+
+    const pendingData = await db.collection('pendingpaymentsofdeliveryboy').findOne({
+      $or: [
+        { userid: deliveryBoyId },
+        { deliveryBoyId: deliveryBoyId }
+      ]
+    });
+
+    if (!pendingData) {
+      return res.status(200).json({
+        deliverycharges: 0,
+        transactions: []
+      });
+    }
+
+    return res.status(200).json(pendingData);
+  } catch (error) {
+    console.error('Fetch pending payments error:', error);
+    return res.status(500).json({ message: 'Internal server error', error: error.message });
+  }
+});
+
 // Fetch order reviews for a delivery boy
 app.get('/api/deliveryboy/:id/reviews', async (req, res) => {
   try {
