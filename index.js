@@ -823,8 +823,7 @@ app.post('/api/acceptedbydeliveries/:id/complete', async (req, res) => {
               ifscCode: ifscCode
             },
             $inc: {
-              deliverycharges: deliveryCharge,
-              deliveryCharge: deliveryCharge
+              deliverycharges: deliveryCharge
             }
           },
           { upsert: true }
