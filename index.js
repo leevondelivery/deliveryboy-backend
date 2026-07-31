@@ -1,4 +1,4 @@
- require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -6,59 +6,34 @@ const admin = require('firebase-admin');
 const { getMessaging } = require('firebase-admin/messaging');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
-
-const { getApps } = require('firebase-admin/app');
 
 // Initialize Firebase Admin SDK
-function initFirebaseAdmin() {
-  try {
-    if ((typeof getApps === 'function' && getApps().length > 0) || (admin.apps && admin.apps.length > 0)) {
-      return true;
-    }
-    const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-      const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
-      const serviceAccount = JSON.parse(rawJson);
-      admin.initializeApp({
-        credential: admin.cert(serviceAccount)
-      });
-      console.log('Firebase Admin SDK initialized successfully via FIREBASE_SERVICE_ACCOUNT env var.');
-      return true;
-    } else if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
-      const privateKey = process.env.FIREBASE_PRIVATE_KEY
-        .replace(/^"|"$/g, '')
-        .replace(/\\n/g, '\n');
-      admin.initializeApp({
-        credential: admin.cert({
-          projectId: process.env.FIREBASE_PROJECT_ID,
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-          privateKey: privateKey,
-        })
-      });
-      console.log('Firebase Admin SDK initialized successfully via individual env vars.');
-      return true;
-    } else if (fs.existsSync(serviceAccountPath)) {
-      const serviceAccount = require(serviceAccountPath);
-      admin.initializeApp({
-        credential: admin.cert(serviceAccount)
-      });
-      console.log('Firebase Admin SDK initialized successfully via serviceAccountKey.json.');
-      return true;
-    } else {
-      console.warn('Firebase credentials not found (neither in environment variables nor serviceAccountKey.json). Push notifications will not work.');
-      return false;
-    }
-  } catch (error) {
-    if (error.code === 'app/duplicate-app' || error.code === 'app/invalid-app-options' || (error.message && error.message.includes('already exists'))) {
-      return true;
-    }
-    console.error('Error initializing Firebase Admin SDK:', error);
-    return false;
+try {
+  const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
+  if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY
+      .replace(/^"|"$/g, '')
+      .replace(/\\n/g, '\n');
+    admin.initializeApp({
+      credential: admin.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: privateKey,
+      })
+    });
+    console.log('Firebase Admin SDK initialized successfully via environment variables.');
+  } else if (fs.existsSync(serviceAccountPath)) {
+    const serviceAccount = require(serviceAccountPath);
+    admin.initializeApp({
+      credential: admin.cert(serviceAccount)
+    });
+    console.log('Firebase Admin SDK initialized successfully via serviceAccountKey.json.');
+  } else {
+    console.warn('Firebase credentials not found (neither in environment variables nor serviceAccountKey.json). Push notifications will not work.');
   }
+} catch (error) {
+  console.error('Error initializing Firebase Admin SDK:', error);
 }
-
-initFirebaseAdmin();
 
 
 const app = express();
@@ -128,11 +103,10 @@ const userSchema = new mongoose.Schema(
     accountNumber: { type: String },
     ifscCode: { type: String },
     isActive: { type: Boolean, default: false }, // Syncs active/inactive state
-    pushToken: { type: String }, // For FCM push notification
-    currentSessionId: { type: String }, // For single-device session enforcement
+    pushToken: { type: String }, // For FCM push notificat
   },
-  { 
-    timestamps: true, // Hndles createdAt and updatedAt automatically
+  {
+    timestamps: true, // Handles createdAt and updatedAt automatically
     collection: 'deliveryboyusers' // Forces Mongoose to use the exact collection name
   }
 );
@@ -157,8 +131,8 @@ const pendingUserSchema = new mongoose.Schema(
     ifscCode: { type: String },
     isActive: { type: Boolean, default: false },
   },
-  { 
-    timestamps: true, 
+  {
+    timestamps: true,
     collection: 'Deliveryboynewadd' // Forces collection name
   }
 );
@@ -211,15 +185,13 @@ app.post('/api/deliveryboy/signup', async (req, res) => {
       return res.status(400).json({ message: 'A registration request with this phone number is already pending admin approval.' });
     }
 
-    // Check email if provided (case-insensitive search)
-    const normalizedEmail = email ? email.trim().toLowerCase() : '';
-    if (normalizedEmail) {
-      const emailQuery = { email: new RegExp(`^${normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') };
-      const existingEmail = await User.findOne(emailQuery);
+    // Check email if provided
+    if (email) {
+      const existingEmail = await User.findOne({ email });
       if (existingEmail) {
         return res.status(400).json({ message: 'Email address is already registered.' });
       }
-      const existingPendingEmail = await PendingUser.findOne(emailQuery);
+      const existingPendingEmail = await PendingUser.findOne({ email });
       if (existingPendingEmail) {
         return res.status(400).json({ message: 'A registration request with this email is already pending admin approval.' });
       }
@@ -228,7 +200,7 @@ app.post('/api/deliveryboy/signup', async (req, res) => {
     // Create a new pending user document
     const pendingUser = new PendingUser({
       name,
-      email: normalizedEmail,
+      email,
       password,
       phone,
       firebaseUid,
@@ -251,44 +223,6 @@ app.post('/api/deliveryboy/signup', async (req, res) => {
   } catch (error) {
     console.error('Signup error:', error);
     return res.status(500).json({ message: 'Internal server error', error: error.message });
-  }
-});
-
-// Check if phone or email already exists before sending OTP during signup
-app.post('/api/deliveryboy/check-existing', async (req, res) => {
-  try {
-    const { phone, email } = req.body;
-    if (!phone) {
-      return res.status(400).json({ exists: false, message: 'Phone number is required' });
-    }
-
-    const existingRegisteredUser = await User.findOne(getPhoneQuery(phone));
-    if (existingRegisteredUser) {
-      return res.status(200).json({ exists: true, message: 'This phone number is already registered. Please log in.' });
-    }
-
-    const existingPendingUser = await PendingUser.findOne(getPhoneQuery(phone));
-    if (existingPendingUser) {
-      return res.status(200).json({ exists: true, message: 'A registration request with this phone number is already pending admin approval.' });
-    }
-
-    const normalizedEmail = email ? email.trim().toLowerCase() : '';
-    if (normalizedEmail) {
-      const emailQuery = { email: new RegExp(`^${normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') };
-      const existingEmail = await User.findOne(emailQuery);
-      if (existingEmail) {
-        return res.status(200).json({ exists: true, message: 'This email address is already registered.' });
-      }
-      const existingPendingEmail = await PendingUser.findOne(emailQuery);
-      if (existingPendingEmail) {
-        return res.status(200).json({ exists: true, message: 'A registration request with this email is already pending admin approval.' });
-      }
-    }
-
-    return res.status(200).json({ exists: false, message: 'Available' });
-  } catch (error) {
-    console.error('Check existing error:', error);
-    return res.status(500).json({ exists: false, message: 'Internal server error' });
   }
 });
 
@@ -323,7 +257,7 @@ app.post('/api/deliveryboy/reset-password', async (req, res) => {
     const user = await User.findOneAndUpdate(
       getPhoneQuery(phone),
       { password: newPassword },
-      { returnDocument: 'after' }
+      { new: true }
     );
 
     if (!user) {
@@ -337,40 +271,7 @@ app.post('/api/deliveryboy/reset-password', async (req, res) => {
   }
 });
 
-// Helper to send FCM push notification
-const sendPushNotification = async (token, title, body) => {
-  if (!token || !admin.apps || !admin.apps.length) return;
-  try {
-    const message = {
-      token: token,
-      notification: {
-        title: title,
-        body: body,
-      },
-      android: {
-        priority: 'high',
-        notification: {
-          sound: 'default',
-          channelId: 'order_notifications',
-          icon: 'ic_notification'
-        }
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: 'default',
-          },
-        },
-      },
-    };
-    await getMessaging().send(message);
-    console.log(`Push notification sent to token: ${token.substring(0, 10)}...`);
-  } catch (err) {
-    console.error('Error sending push notification:', err.message);
-  }
-};
-
-// Login Endpoint - Single Device Session Enforcement & Dual Notifications
+// Login Endpoint
 app.post('/api/login', async (req, res) => {
   try {
     const { phone, password } = req.body;
@@ -390,35 +291,15 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ message: 'incorrect id and password', errorType: 'INCORRECT_PASSWORD' });
     }
 
-    // Single-device session management: generate new unique session ID
-    const newSessionId = crypto.randomUUID();
-    const previousPushToken = user.pushToken;
-
-    // 1. Send Push Notification to Device A (old device) informing them of automatic logout
-    if (previousPushToken) {
-      sendPushNotification(
-        previousPushToken,
-        '⚠️ Account Logged Out',
-        'Your account was logged in from another device.'
-      ).catch(err => console.error('Failed to notify old device on logout:', err));
-    }
-
-    // 2. Update user record in MongoDB with new sessionId
-    const updatedUser = await User.findByIdAndUpdate(
-      user._id,
-      { $set: { currentSessionId: newSessionId } },
-      { returnDocument: 'after' }
-    );
-
+    // Success response returning requested fields
     return res.status(200).json({
       message: 'Login successful',
-      sessionId: newSessionId,
       user: {
-        _id: updatedUser._id,
-        name: updatedUser.name,
-        phone: updatedUser.phone,
-        isActive: updatedUser.isActive,
-        updatedAt: updatedUser.updatedAt,
+        _id: user._id,
+        name: user.name,
+        phone: user.phone,
+        isActive: user.isActive,
+        updatedAt: user.updatedAt,
       }
     });
   } catch (error) {
@@ -466,22 +347,10 @@ app.put('/api/users/:id/status', async (req, res) => {
       return res.status(400).json({ message: 'isActive field is required and must be a boolean' });
     }
 
-    // Block going offline if delivery boy has an active order
-    if (isActive === false) {
-      const db = mongoose.connection.db;
-      const activeOrder = await db.collection('acceptedbydeliveries').findOne({ deliveryBoyId: req.params.id });
-      if (activeOrder) {
-        return res.status(400).json({
-          message: 'Cannot go offline while you have an active order. Please complete your order first.',
-          hasActiveOrder: true
-        });
-      }
-    }
-
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { isActive },
-      { returnDocument: 'after' } // Returns the updated document
+      { new: true } // Returns the updated document
     );
 
     if (!user) {
@@ -506,20 +375,11 @@ app.put('/api/users/:id/push-token', async (req, res) => {
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { pushToken },
-      { returnDocument: 'after' }
+      { new: true }
     );
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
-    }
-
-    // 2. Send Push Notification to Device B (new device) confirming successful login
-    if (pushToken) {
-      sendPushNotification(
-        pushToken,
-        '🟢 Logged In Successfully',
-        'Welcome! Your account is active on this device.'
-      ).catch(err => console.error('Failed to notify new device on login:', err));
     }
 
     return res.status(200).json({
@@ -532,44 +392,16 @@ app.put('/api/users/:id/push-token', async (req, res) => {
   }
 });
 
-// Verify Session Endpoint - Enforces single-device session check
-app.post('/api/verify-session', async (req, res) => {
-  try {
-    const { userid, sessionId } = req.body;
-    if (!userid || !sessionId) {
-      return res.status(400).json({ success: false, message: 'userid and sessionId are required' });
-    }
-
-    const user = await User.findById(userid);
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
-
-    if (user.currentSessionId && user.currentSessionId !== sessionId) {
-      return res.status(401).json({
-        success: false,
-        code: 'SESSION_EXPIRED',
-        message: 'Your account was logged in from another device.'
-      });
-    }
-
-    return res.status(200).json({ success: true, message: 'Session valid' });
-  } catch (error) {
-    console.error('Verify session error:', error);
-    return res.status(500).json({ success: false, message: 'Internal server error' });
-  }
-});
-
 // FCM Diagnostic and Test Endpoint
 app.get('/api/diagnose-fcm', async (req, res) => {
   try {
     const activeUsers = await User.find({
-      $or: [{ isActive: true }, { isActive: 'true' }],
-      pushToken: { $exists: true, $ne: null, $ne: '' }
+      isActive: true,
+      pushToken: { $exists: true, $ne: '' }
     });
 
     const initializationStatus = admin.getApps().length > 0 ? 'Initialized' : 'Not Initialized';
-    
+
     let sendResult = null;
     if (activeUsers.length > 0 && admin.getApps().length > 0) {
       const tokens = [...new Set(activeUsers.map(user => user.pushToken))];
@@ -583,7 +415,6 @@ app.get('/api/diagnose-fcm', async (req, res) => {
           notification: {
             sound: 'ordernotification',
             channelId: 'order_notifications',
-            icon: 'ic_notification'
           }
         },
         apns: {
@@ -628,7 +459,7 @@ app.get('/api/deliveryboy/:id/earnings', async (req, res) => {
       .toArray();
 
     const now = new Date();
-    
+
     // Define start boundaries in server local time
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -727,7 +558,7 @@ app.put('/api/acceptedorders/:id/reject', async (req, res) => {
     }
 
     const db = mongoose.connection.db;
-    
+
     // Check if orderId is a valid ObjectId, otherwise query as string
     let query = {};
     if (mongoose.Types.ObjectId.isValid(orderId)) {
@@ -974,7 +805,7 @@ app.post('/api/acceptedbydeliveries/:id/complete', async (req, res) => {
         }
 
         await db.collection('pendingpaymentsofdeliveryboy').updateOne(
-          { 
+          {
             $or: [
               { userid: deliveryBoyId },
               { deliveryBoyId: deliveryBoyId }
@@ -1006,7 +837,6 @@ app.post('/api/acceptedbydeliveries/:id/complete', async (req, res) => {
     return res.status(200).json({ message: 'Order completed successfully', orderId: order.orderId });
   } catch (error) {
     console.error('Complete order error:', error);
-    return res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 });
 
@@ -1080,7 +910,7 @@ async function sendFCMToActiveDeliveryBoys(order) {
     // Send using FCM admin SDK (sendEachForMulticast)
     const response = await getMessaging().sendEachForMulticast(message);
     console.log(`FCM Multicast Result: ${response.successCount} succeeded; ${response.failureCount} failed.`);
-    
+
     // Log detailed failure reason and clean up stale tokens
     if (response.failureCount > 0) {
       response.responses.forEach((resp, idx) => {
@@ -1124,7 +954,7 @@ function setupOrderListener() {
     changeStream.on('error', (err) => {
       console.error('Change stream error:', err.message || err);
       if (changeStream) {
-        changeStream.close().catch(() => {});
+        changeStream.close().catch(() => { });
       }
       if (!isPollingActive) {
         isPollingActive = true;
