@@ -793,6 +793,7 @@ app.post('/api/acceptedorders/:id/accept', async (req, res) => {
       deliveryFee: order.deliveryFee ?? order.deliveryCharge ?? 0,
       deliveryCharge: order.deliveryCharge ?? order.deliveryFee ?? 0,
       deliveryDistance: order.deliveryDistance ?? order.distance ?? (order.location && typeof order.location === 'object' ? order.location.distanceText : null),
+      preparationTime: order.preparationTime ?? order.prepTime ?? order.preparation_time ?? order.cookingTime ?? order.estimatedPreparationTime ?? order.estimatedTime ?? order.prepMinutes ?? order.prep_time ?? null,
       userCoordinates: order.userCoordinates || order.location,
       status: 'Accepted by Delivery',
       acceptedAt: new Date(),
