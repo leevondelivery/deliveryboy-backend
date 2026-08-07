@@ -905,7 +905,7 @@ app.get('/api/deliveryboy/:id/reviews', async (req, res) => {
 // Function to send FCM notification to all active delivery partners
 async function sendFCMToActiveDeliveryBoys(order) {
   try {
-    if (!initFirebaseAdmin()) {
+    if (admin.getApps().length === 0) {
       console.warn('Firebase Admin SDK is not initialized. Skipping push notification.');
       return;
     }
