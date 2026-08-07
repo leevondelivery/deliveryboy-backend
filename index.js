@@ -10,10 +10,29 @@ const path = require('path');
 // Initialize Firebase Admin SDK
 try {
   const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
-  if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY
-      .replace(/^"|"$/g, '')
-      .replace(/\\n/g, '\n');
+  
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    // Parse complete service account JSON from environment variable
+    const serviceAccount = typeof process.env.FIREBASE_SERVICE_ACCOUNT === 'string'
+      ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT.trim())
+      : process.env.FIREBASE_SERVICE_ACCOUNT;
+    
+    admin.initializeApp({
+      credential: admin.cert(serviceAccount)
+    });
+    console.log('Firebase Admin SDK initialized successfully via FIREBASE_SERVICE_ACCOUNT environment variable.');
+  } else if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && (process.env.FIREBASE_PRIVATE_KEY || process.env.FIREBASE_PRIVATE_KEY_BASE64)) {
+    let privateKey;
+    if (process.env.FIREBASE_PRIVATE_KEY_BASE64) {
+      privateKey = Buffer.from(process.env.FIREBASE_PRIVATE_KEY_BASE64, 'base64').toString('utf8');
+    } else {
+      privateKey = process.env.FIREBASE_PRIVATE_KEY
+        .trim()
+        .replace(/^\\?["']|\\?["']$/g, '')
+        .replace(/\\"/g, '"')
+        .replace(/\\n/g, '\n');
+    }
+
     admin.initializeApp({
       credential: admin.cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
@@ -21,7 +40,7 @@ try {
         privateKey: privateKey,
       })
     });
-    console.log('Firebase Admin SDK initialized successfully via environment variables.');
+    console.log('Firebase Admin SDK initialized successfully via individual environment variables.');
   } else if (fs.existsSync(serviceAccountPath)) {
     const serviceAccount = require(serviceAccountPath);
     admin.initializeApp({
@@ -257,7 +276,7 @@ app.post('/api/deliveryboy/reset-password', async (req, res) => {
     const user = await User.findOneAndUpdate(
       getPhoneQuery(phone),
       { password: newPassword },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!user) {
@@ -350,7 +369,7 @@ app.put('/api/users/:id/status', async (req, res) => {
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { isActive },
-      { new: true } // Returns the updated document
+      { returnDocument: 'after' } // Returns the updated document
     );
 
     if (!user) {
@@ -375,7 +394,7 @@ app.put('/api/users/:id/push-token', async (req, res) => {
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { pushToken },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!user) {
