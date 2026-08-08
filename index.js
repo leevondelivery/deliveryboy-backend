@@ -890,10 +890,29 @@ app.get('/api/deliveryboy/:id/reviews', async (req, res) => {
   try {
     const deliveryBoyId = req.params.id;
     const db = mongoose.connection.db;
-    const reviews = await db.collection('orderreviews')
-      .find({ deliveryBoyId: deliveryBoyId })
+
+    // Search in 'reviews' collection first, fallback to 'orderreviews'
+    let reviews = await db.collection('reviews')
+      .find({
+        $or: [
+          { deliveryBoyId: deliveryBoyId },
+          { delivery_boy_id: deliveryBoyId }
+        ]
+      })
       .sort({ createdAt: -1 })
       .toArray();
+
+    if (!reviews || reviews.length === 0) {
+      reviews = await db.collection('orderreviews')
+        .find({
+          $or: [
+            { deliveryBoyId: deliveryBoyId },
+            { delivery_boy_id: deliveryBoyId }
+          ]
+        })
+        .sort({ createdAt: -1 })
+        .toArray();
+    }
 
     return res.status(200).json(reviews);
   } catch (error) {
