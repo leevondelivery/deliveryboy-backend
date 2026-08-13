@@ -113,6 +113,8 @@ const userSchema = new mongoose.Schema(
     name: { type: String, required: true },
     email: { type: String },
     firebaseUid: { type: String },
+    profilePicUrl: { type: String },
+    photoUrl: { type: String },
     aadharUrl: { type: String },
     aadharNumber: { type: String },
     rcUrl: { type: String },
@@ -122,7 +124,8 @@ const userSchema = new mongoose.Schema(
     accountNumber: { type: String },
     ifscCode: { type: String },
     isActive: { type: Boolean, default: false }, // Syncs active/inactive state
-    pushToken: { type: String }, // For FCM push notificat
+    isBlocked: { type: Boolean, default: false }, // Explicit block status set by admin
+    pushToken: { type: String }, // For FCM push notification
   },
   {
     timestamps: true, // Handles createdAt and updatedAt automatically
@@ -140,6 +143,8 @@ const pendingUserSchema = new mongoose.Schema(
     name: { type: String, required: true },
     email: { type: String },
     firebaseUid: { type: String },
+    profilePicUrl: { type: String },
+    photoUrl: { type: String },
     aadharUrl: { type: String },
     aadharNumber: { type: String },
     rcUrl: { type: String },
@@ -182,6 +187,10 @@ app.post('/api/deliveryboy/signup', async (req, res) => {
       password,
       phone,
       firebaseUid,
+      profilePicUrl,
+      photoUrl,
+      deliveryBoyPhotoUrl,
+      photo,
       aadharUrl,
       aadharNumber,
       rcUrl,
@@ -191,6 +200,8 @@ app.post('/api/deliveryboy/signup', async (req, res) => {
       accountNumber,
       ifscCode
     } = req.body;
+
+    const actualPhotoUrl = profilePicUrl || photoUrl || deliveryBoyPhotoUrl || photo || '';
 
     // Check if phone number is already registered in deliveryboyusers
     const existingRegisteredUser = await User.findOne(getPhoneQuery(phone));
@@ -223,6 +234,8 @@ app.post('/api/deliveryboy/signup', async (req, res) => {
       password,
       phone,
       firebaseUid,
+      profilePicUrl: actualPhotoUrl,
+      photoUrl: actualPhotoUrl,
       aadharUrl,
       aadharNumber,
       rcUrl,
@@ -305,6 +318,14 @@ app.post('/api/login', async (req, res) => {
       return res.status(404).json({ message: 'no account found', errorType: 'NO_ACCOUNT' });
     }
 
+    // Check if user is blocked or inactive
+    if (user.isBlocked || user.isActive === false) {
+      return res.status(403).json({
+        message: 'Your account has been blocked by administration. Please contact support.',
+        errorType: 'ACCOUNT_BLOCKED'
+      });
+    }
+
     // Compare the plaintext passwords
     if (user.password !== password) {
       return res.status(401).json({ message: 'incorrect id and password', errorType: 'INCORRECT_PASSWORD' });
@@ -318,11 +339,44 @@ app.post('/api/login', async (req, res) => {
         name: user.name,
         phone: user.phone,
         isActive: user.isActive,
+        isBlocked: user.isBlocked,
         updatedAt: user.updatedAt,
       }
     });
   } catch (error) {
     console.error('Login error:', error);
+    return res.status(500).json({ message: 'Internal server error', error: error.message });
+  }
+});
+
+// Verify Session Endpoint (used for periodic auto-logout checks)
+app.post('/api/verify-session', async (req, res) => {
+  try {
+    const { userid } = req.body;
+
+    if (!userid) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    const user = await User.findById(userid);
+    if (!user) {
+      return res.status(401).json({ code: 'SESSION_EXPIRED', message: 'User account not found' });
+    }
+
+    if (user.isBlocked || user.isActive === false) {
+      return res.status(403).json({
+        code: 'ACCOUNT_BLOCKED',
+        message: 'Your account has been blocked by administration.'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      isActive: user.isActive,
+      isBlocked: !!user.isBlocked
+    });
+  } catch (error) {
+    console.error('Verify session error:', error);
     return res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 });
@@ -334,12 +388,23 @@ app.get('/api/users/:id', async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+
+    if (user.isBlocked || user.isActive === false) {
+      return res.status(403).json({
+        code: 'ACCOUNT_BLOCKED',
+        message: 'Your account has been blocked by administration.'
+      });
+    }
+
     return res.status(200).json({
       _id: user._id,
       name: user.name,
       phone: user.phone,
       email: user.email,
       isActive: user.isActive,
+      isBlocked: user.isBlocked,
+      profilePicUrl: user.profilePicUrl || user.photoUrl || '',
+      photoUrl: user.photoUrl || user.profilePicUrl || '',
       aadharUrl: user.aadharUrl,
       aadharNumber: user.aadharNumber,
       rcUrl: user.rcUrl,
