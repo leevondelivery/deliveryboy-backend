@@ -319,7 +319,7 @@ app.post('/api/login', async (req, res) => {
     }
 
     // Check if user is blocked or inactive
-    if (user.isBlocked || user.isActive === false) {
+    if (user.isBlocked === true) {
       return res.status(403).json({
         message: 'Your account has been blocked by administration. Please contact support.',
         errorType: 'ACCOUNT_BLOCKED'
@@ -363,7 +363,7 @@ app.post('/api/verify-session', async (req, res) => {
       return res.status(401).json({ code: 'SESSION_EXPIRED', message: 'User account not found' });
     }
 
-    if (user.isBlocked || user.isActive === false) {
+    if (user.isBlocked === true) {
       return res.status(403).json({
         code: 'ACCOUNT_BLOCKED',
         message: 'Your account has been blocked by administration.'
@@ -389,7 +389,7 @@ app.get('/api/users/:id', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (user.isBlocked || user.isActive === false) {
+    if (user.isBlocked === true) {
       return res.status(403).json({
         code: 'ACCOUNT_BLOCKED',
         message: 'Your account has been blocked by administration.'
