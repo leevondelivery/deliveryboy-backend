@@ -16,9 +16,9 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "firebase-admin": "^14.1.0",
-    "mongoose": "^9.7.0"
+    "mongoose": "^9.7.0",
+    "qrcode": "^1.5.4"
   },
-  "devDependencies": {},
   "repository": {
     "type": "git",
     "url": "git+https://github.com/leevondelivery/deliveryboy-backend.git"

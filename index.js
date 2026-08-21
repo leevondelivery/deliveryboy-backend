@@ -1,6 +1,9 @@
 require('dotenv').config();
+const QRCode = require('qrcode');
 const express = require('express');
+
 const mongoose = require('mongoose');
+const getDb = () => mongoose.connection.db || (mongoose.connection.client && mongoose.connection.client.db());
 const cors = require('cors');
 const admin = require('firebase-admin');
 const { getMessaging } = require('firebase-admin/messaging');
@@ -537,7 +540,7 @@ app.get('/api/diagnose-fcm', async (req, res) => {
 app.get('/api/deliveryboy/:id/earnings', async (req, res) => {
   try {
     const deliveryBoyId = req.params.id;
-    const db = mongoose.connection.db;
+    const db = getDb();
     const orders = await db.collection('finalcompletedorders')
       .find({ deliveryBoyId: deliveryBoyId })
       .toArray();
@@ -588,7 +591,7 @@ app.get('/api/deliveryboy/:id/earnings', async (req, res) => {
 app.get('/api/deliveryboy/:id/orders', async (req, res) => {
   try {
     const deliveryBoyId = req.params.id;
-    const db = mongoose.connection.db;
+    const db = getDb();
     const orders = await db.collection('finalcompletedorders')
       .find({ deliveryBoyId: deliveryBoyId })
       .sort({ completedAt: -1 })
@@ -605,7 +608,7 @@ app.get('/api/deliveryboy/:id/orders', async (req, res) => {
 app.get('/api/acceptedorders', async (req, res) => {
   try {
     const { deliveryBoyId } = req.query;
-    const db = mongoose.connection.db;
+    const db = getDb();
 
     let query = {};
     if (deliveryBoyId) {
@@ -641,7 +644,7 @@ app.put('/api/acceptedorders/:id/reject', async (req, res) => {
       return res.status(400).json({ message: 'deliveryBoyId is required' });
     }
 
-    const db = mongoose.connection.db;
+    const db = getDb();
 
     // Check if orderId is a valid ObjectId, otherwise query as string
     let query = {};
@@ -677,7 +680,7 @@ app.post('/api/acceptedorders/:id/accept', async (req, res) => {
       return res.status(400).json({ message: 'deliveryBoyId, deliveryBoyName, and deliveryBoyPhone are required' });
     }
 
-    const db = mongoose.connection.db;
+    const db = getDb();
 
     let query = {};
     if (mongoose.Types.ObjectId.isValid(orderId)) {
@@ -757,7 +760,7 @@ app.post('/api/acceptedorders/:id/accept', async (req, res) => {
 app.get('/api/deliveryboy/:id/activeorder', async (req, res) => {
   try {
     const deliveryBoyId = req.params.id;
-    const db = mongoose.connection.db;
+    const db = getDb();
     const activeOrder = await db.collection('acceptedbydeliveries').findOne({ deliveryBoyId });
     if (!activeOrder) {
       return res.status(404).json({ message: 'No active order found' });
@@ -773,7 +776,7 @@ app.get('/api/deliveryboy/:id/activeorder', async (req, res) => {
 app.post('/api/acceptedbydeliveries/:id/pickup', async (req, res) => {
   try {
     const orderId = req.params.id; // can be ORD-00705 or database _id
-    const db = mongoose.connection.db;
+    const db = getDb();
 
     let query = {};
     if (mongoose.Types.ObjectId.isValid(orderId)) {
@@ -829,7 +832,7 @@ app.post('/api/acceptedbydeliveries/:id/complete', async (req, res) => {
       return res.status(400).json({ message: 'OTP is required' });
     }
 
-    const db = mongoose.connection.db;
+    const db = getDb();
 
     let query = {};
     if (mongoose.Types.ObjectId.isValid(orderId)) {
@@ -927,7 +930,7 @@ app.post('/api/acceptedbydeliveries/:id/complete', async (req, res) => {
 app.get('/api/deliveryboy/:id/pendingpayments', async (req, res) => {
   try {
     const deliveryBoyId = req.params.id;
-    const db = mongoose.connection.db;
+    const db = getDb();
 
     const pendingData = await db.collection('pendingpaymentsofdeliveryboy').findOne({
       $or: [
@@ -954,7 +957,7 @@ app.get('/api/deliveryboy/:id/pendingpayments', async (req, res) => {
 app.get('/api/deliveryboy/:id/reviews', async (req, res) => {
   try {
     const deliveryBoyId = req.params.id;
-    const db = mongoose.connection.db;
+    const db = getDb();
 
     // Search in 'reviews' collection first, fallback to 'orderreviews'
     let reviews = await db.collection('reviews')
@@ -1064,7 +1067,7 @@ let isPollingActive = false;
 
 // Set up MongoDB listener for acceptedorders collection
 function setupOrderListener() {
-  const db = mongoose.connection.db;
+  const db = getDb();
   const collection = db.collection('acceptedorders');
 
   console.log('Setting up MongoDB Order Change Stream listener...');
@@ -1102,7 +1105,7 @@ function setupOrderListener() {
 // Fallback polling for MongoDB instances without replica set configured
 function setupPollingFallback() {
   console.log('Setting up database polling fallback (every 10 seconds)...');
-  const db = mongoose.connection.db;
+  const db = getDb();
   const collection = db.collection('acceptedorders');
 
   let knownOrderIds = new Set();
@@ -1139,6 +1142,276 @@ function setupPollingFallback() {
 }
 
 // Start Server
+
+// Cashfree Payments Configuration
+const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID || '136369495120d9d82888ced50264963631';
+const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY || 'cfsk_ma_prod_7206262c523c3fba0ffb1b158f12d534_680260de';
+const CASHFREE_ENV = (process.env.CASHFREE_ENV || 'PROD').toUpperCase();
+const CASHFREE_BASE_URL = CASHFREE_ENV === 'PROD'
+  ? 'https://api.cashfree.com/pg'
+  : 'https://sandbox.cashfree.com/pg';
+
+
+// Helper to register order with Cashfree PG & return Dynamic QR details
+// Helper to register order with Cashfree PG & return Dynamic QR details (generated 100% locally on server)
+// Helper to register order with Cashfree PG & return 100% NPCI-compliant Dynamic UPI QR details
+
+// Helper to register order session with official Cashfree PG & return Checkout URL
+
+// Helper to register order session with official Cashfree PG & return Checkout URL
+
+// GET /api/payment/cashfree-checkout/:sessionId - Serve official Cashfree JS v3 Checkout Page
+
+// GET /api/payment/cashfree-checkout/:sessionId - Serve official Cashfree JS v3 Checkout Page
+app.get('/api/payment/cashfree-checkout/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const mode = CASHFREE_ENV === 'PROD' ? 'production' : 'sandbox';
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cashfree Official Payment</title>
+  <script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
+  <style>
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; font-family: sans-serif; background: #ffffff; }
+    #cashfree-container { width: 100%; height: 100%; min-height: 440px; }
+  </style>
+</head>
+<body>
+  <div id="cashfree-container"></div>
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      try {
+        const cashfree = Cashfree({ mode: "${mode}" });
+        cashfree.checkout({
+          paymentSessionId: "${sessionId}",
+          redirectTarget: "_self"
+        });
+      } catch(err) {
+        console.error("Cashfree SDK init error:", err);
+      }
+    });
+  </script>
+</body>
+</html>`;
+  res.setHeader('Content-Type', 'text/html');
+  return res.send(html);
+});
+
+// Helper to register order session with official Cashfree PG & return QR Code & URLs
+async function getCashfreeDynamicQr(order) {
+  const amount = Number(order.grandTotal || order.totalPrice || 0);
+  const cfOrderId = order.cashfreeOrderId || order.orderId || `order_${Date.now()}`;
+  const cleanPhone = (order.userPhone && String(order.userPhone).replace(/\D/g, '').slice(-10)) || '9999999999';
+  const cleanEmail = (order.userEmail && order.userEmail !== 'N/A' ? order.userEmail : 'customer@example.com');
+  const cleanName = (order.userName && order.userName !== 'N/A' ? order.userName : 'Customer');
+  const cleanUserId = String(order.userId || `user_${Date.now()}`);
+
+  let paymentSessionId = '';
+
+  if (CASHFREE_APP_ID && CASHFREE_SECRET_KEY) {
+    try {
+      console.log('[Cashfree Official PG] Creating order session on Cashfree:', { cfOrderId, amount });
+      const cfRes = await fetch(`${CASHFREE_BASE_URL}/orders`, {
+        method: 'POST',
+        headers: {
+          'x-client-id': CASHFREE_APP_ID,
+          'x-client-secret': CASHFREE_SECRET_KEY,
+          'x-api-version': '2023-08-01',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          order_id: cfOrderId,
+          order_amount: amount,
+          order_currency: 'INR',
+          customer_details: {
+            customer_id: cleanUserId,
+            customer_name: cleanName,
+            customer_email: cleanEmail,
+            customer_phone: cleanPhone
+          }
+        })
+      });
+      const cfData = await cfRes.json();
+
+      if (cfRes.ok && cfData.payment_session_id) {
+        paymentSessionId = cfData.payment_session_id;
+      } else if (cfRes.status === 409 || cfData.code === 'order_already_exists') {
+        const getRes = await fetch(`${CASHFREE_BASE_URL}/orders/${cfOrderId}`, {
+          headers: {
+            'x-client-id': CASHFREE_APP_ID,
+            'x-client-secret': CASHFREE_SECRET_KEY,
+            'x-api-version': '2023-08-01'
+          }
+        });
+        if (getRes.ok) {
+          const getData = await getRes.json();
+          paymentSessionId = getData.payment_session_id || '';
+        }
+      }
+    } catch (cfErr) {
+      console.error('[Cashfree PG] Session error:', cfErr.message);
+    }
+  }
+
+  // Alphanumeric transaction ref ID for NPCI compliance
+  const cleanTr = cfOrderId.replace(/[^a-zA-Z0-9]/g, '');
+  const cleanTn = `Order${cleanTr}`;
+  const payeeVpa = `${CASHFREE_APP_ID}@cashfree`;
+  const upiString = `upi://pay?pa=${payeeVpa}&pn=LeevonDelivery&tr=${cleanTr}&tn=${cleanTn}&am=${amount.toFixed(2)}&cu=INR`;
+
+  let qrCodeUrl = '';
+  try {
+    qrCodeUrl = await QRCode.toDataURL(upiString, { margin: 1, width: 300 });
+  } catch (err) {
+    console.error('[QRCode Generator] Error:', err.message);
+  }
+
+  const hostPort = process.env.PORT || 5000;
+  const paymentUrl = paymentSessionId
+    ? `http://localhost:${hostPort}/api/payment/cashfree-checkout/${paymentSessionId}`
+    : `https://payments.cashfree.com/links/${cfOrderId}`;
+
+  return {
+    success: true,
+    orderId: order.orderId,
+    cashfreeOrderId: cfOrderId,
+    amount: amount,
+    paymentSessionId: paymentSessionId,
+    paymentUrl: paymentUrl,
+    upiString: upiString,
+    qrCodeUrl: qrCodeUrl
+  };
+}
+
+
+app.post('/api/payment/generate-qr', async (req, res) => {
+  const { orderId } = req.body;
+  if (!orderId) {
+    return res.status(400).json({ success: false, message: 'Order ID is required' });
+  }
+
+  try {
+    const db = getDb();
+    const query = { $or: [{ orderId: orderId }, { cashfreeOrderId: orderId }] };
+    if (mongoose.Types.ObjectId.isValid(orderId)) {
+      query.$or.push({ _id: new mongoose.Types.ObjectId(orderId) });
+    }
+
+    let order = await db.collection('acceptedbydeliveries').findOne(query);
+    if (!order) {
+      order = await db.collection('orders').findOne(query);
+    }
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    const qrResult = await getCashfreeDynamicQr(order);
+    return res.status(200).json(qrResult);
+  } catch (err) {
+    console.error('Generate Dynamic QR error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to generate Dynamic QR Code', error: err.message });
+  }
+});
+
+// POST /api/payment/verify-doorstep-pay
+app.post('/api/payment/verify-doorstep-pay', async (req, res) => {
+  const { orderId, markPaid } = req.body;
+  if (!orderId) {
+    return res.status(400).json({ success: false, message: 'Order ID is required' });
+  }
+
+  try {
+    const db = getDb();
+    const query = { $or: [{ orderId: orderId }, { cashfreeOrderId: orderId }] };
+    if (mongoose.Types.ObjectId.isValid(orderId)) {
+      query.$or.push({ _id: new mongoose.Types.ObjectId(orderId) });
+    }
+
+    let order = await db.collection('acceptedbydeliveries').findOne(query);
+    if (!order) {
+      order = await db.collection('orders').findOne(query);
+    }
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    const cfOrderId = order.cashfreeOrderId || order.orderId;
+
+    if (order.paymentStatus !== 'Paid' && CASHFREE_APP_ID && CASHFREE_SECRET_KEY) {
+      try {
+        const cfRes = await fetch(`${CASHFREE_BASE_URL}/orders/${cfOrderId}`, {
+          headers: {
+            'x-client-id': CASHFREE_APP_ID,
+            'x-client-secret': CASHFREE_SECRET_KEY,
+            'x-api-version': '2023-08-01'
+          }
+        });
+        if (cfRes.ok) {
+          const cfData = await cfRes.json();
+          if (cfData.order_status === 'PAID') {
+            order.paymentStatus = 'Paid';
+          }
+        }
+      } catch (cfErr) {
+        console.error('[Cashfree Status Check] Error:', cfErr.message);
+      }
+    }
+
+    if (markPaid || order.paymentStatus === 'Paid') {
+      await db.collection('orders').updateOne(query, { $set: { paymentStatus: 'Paid' } });
+      await db.collection('orderstatuses').updateOne(query, { $set: { paymentStatus: 'Paid' } });
+      await db.collection('acceptedbydeliveries').updateOne(query, { $set: { paymentStatus: 'Paid' } });
+      return res.status(200).json({
+        success: true,
+        paymentStatus: 'Paid',
+        isPaid: true,
+        message: 'Doorstep payment marked as Paid successfully'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      paymentStatus: order.paymentStatus || 'Pending',
+      isPaid: String(order.paymentStatus).toLowerCase() === 'paid',
+      message: 'Payment status checked'
+    });
+  } catch (err) {
+    console.error('Verify doorstep pay error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
+  }
+});
+
+// GET /api/payment/verify-doorstep-pay/:orderId
+app.get('/api/payment/verify-doorstep-pay/:orderId', async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const db = getDb();
+    const query = { $or: [{ orderId: orderId }, { cashfreeOrderId: orderId }] };
+    if (mongoose.Types.ObjectId.isValid(orderId)) {
+      query.$or.push({ _id: new mongoose.Types.ObjectId(orderId) });
+    }
+    let order = await db.collection('acceptedbydeliveries').findOne(query);
+    if (!order) {
+      order = await db.collection('orders').findOne(query);
+    }
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+    const isPaid = String(order.paymentStatus).toLowerCase() === 'paid';
+    return res.status(200).json({
+      success: true,
+      paymentStatus: order.paymentStatus || 'Pending',
+      isPaid: isPaid
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Error checking payment status' });
+  }
+});
+
+
 app.listen(PORT, () => {
   console.log(`Backend server is running on port ${PORT}`);
 });
