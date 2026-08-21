@@ -1144,8 +1144,8 @@ function setupPollingFallback() {
 // Start Server
 
 // Cashfree Payments Configuration
-const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID || '136369495120d9d82888ced50264963631';
-const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY || 'cfsk_ma_prod_7206262c523c3fba0ffb1b158f12d534_680260de';
+const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID || '';
+const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY || '';
 const CASHFREE_ENV = (process.env.CASHFREE_ENV || 'PROD').toUpperCase();
 const CASHFREE_BASE_URL = CASHFREE_ENV === 'PROD'
   ? 'https://api.cashfree.com/pg'
