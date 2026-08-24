@@ -1633,32 +1633,13 @@ app.post('/api/payment/cashfree-webhook', async (req, res) => {
         await db.collection('acceptedbydeliveries').updateOne(query, updateQuery);
         await db.collection('acceptedorders').updateOne(query, updateQuery);
         await db.collection('orders').updateOne(query, updateQuery);
-        console.log([Cashfree Webhook] Order  updated to Paid successfully.);
+        console.log('[Cashfree Webhook] Order ' + cfOrderId + ' updated to Paid successfully.');
       }
     }
     return res.status(200).json({ status: 'OK' });
   } catch (err) {
     console.error('[Cashfree Webhook] Handler error:', err);
     return res.status(200).json({ status: 'OK' });
-  }
-});
-
-    const order = await db.collection('acceptedbydeliveries').findOne(query) || await db.collection('acceptedorders').findOne(query) || await db.collection('orders').findOne(query);
-
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
-
-    const isPaid = (order.paymentStatus || '').toLowerCase() === 'paid' || order.isPaid === true;
-
-    return res.status(200).json({
-      success: true,
-      isPaid: isPaid,
-      paymentStatus: order.paymentStatus || (isPaid ? 'Paid' : 'Pending')
-    });
-  } catch (err) {
-    console.error('[Backend] Verify doorstep pay error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to verify payment', error: err.message });
   }
 });
 
