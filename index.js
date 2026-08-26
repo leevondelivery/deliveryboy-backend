@@ -1,10 +1,11 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const QRCode = require('qrcode');
 const Razorpay = require('razorpay');
 
 function getRazorpayClient() {
-  const key_id = process.env.RAZORPAY_KEY_ID || 'rzp_live_TU1hivZirSqgSc';
-  const key_secret = process.env.RAZORPAY_KEY_SECRET || '6okCfOvV97P453Lc3wakJUCm';
+  const key_id = process.env.RAZORPAY_KEY_ID;
+  const key_secret = process.env.RAZORPAY_KEY_SECRET;
   return new Razorpay({ key_id, key_secret });
 }
 const express = require('express');
@@ -1359,25 +1360,50 @@ app.post('/api/payment/verify-doorstep-pay', async (req, res) => {
 });
 
 // POST /api/payment/razorpay-webhook - Razorpay Webhook Event Receiver
-app.post('/api/payment/razorpay-webhook', async (req, res) => {
+app.post(['/api/payment/razorpay-webhook', '/api/payment/webhook'], async (req, res) => {
   try {
     const payload = req.body || {};
+    const signature = req.headers['x-razorpay-signature'];
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_KEY_SECRET;
+
+    if (webhookSecret && signature) {
+      const expectedSignature = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(JSON.stringify(payload))
+        .digest('hex');
+
+      if (signature !== expectedSignature) {
+        console.warn('[Razorpay Webhook] Signature verification alert.');
+      }
+    }
+
     console.log('[Razorpay Webhook] Event Received:', JSON.stringify(payload));
     const eventType = payload.event;
     const paymentEntity = payload.payload?.payment?.entity || {};
     const qrEntity = payload.payload?.qr_code?.entity || {};
+    const orderEntity = payload.payload?.order?.entity || {};
 
-    const qrId = qrEntity.id || paymentEntity.notes?.qrCodeId;
-    const orderIdNote = paymentEntity.notes?.orderId || qrEntity.notes?.orderId;
+    const qrId = qrEntity.id || paymentEntity.notes?.qrCodeId || paymentEntity.notes?.qr_id;
+    const orderIdNote = paymentEntity.notes?.orderId || qrEntity.notes?.orderId || orderEntity.notes?.orderId;
+    const rzpOrderId = paymentEntity.order_id || orderEntity.id;
+    const rzpPaymentId = paymentEntity.id;
 
-    if (eventType === 'qr_code.credited' || eventType === 'payment.captured' || paymentEntity.status === 'captured') {
+    if (eventType === 'qr_code.credited' || eventType === 'payment.captured' || eventType === 'order.paid' || paymentEntity.status === 'captured') {
       const db = mongoose.connection.db || getDb();
       let query = { $or: [] };
       if (qrId) query.$or.push({ razorpayQrId: qrId }, { doorstepCfOrderId: qrId });
-      if (orderIdNote) query.$or.push({ orderId: orderIdNote });
+      if (orderIdNote) query.$or.push({ orderId: orderIdNote }, { razorpayOrderId: orderIdNote });
+      if (rzpOrderId) query.$or.push({ razorpayOrderId: rzpOrderId }, { orderId: rzpOrderId });
 
       if (query.$or.length > 0) {
-        const updateQuery = { $set: { paymentStatus: 'Paid', isPaid: true, paidAt: new Date() } };
+        const updatePayload = {
+          paymentStatus: 'Paid',
+          isPaid: true,
+          paidAt: new Date()
+        };
+        if (rzpPaymentId) updatePayload.razorpayPaymentId = rzpPaymentId;
+
+        const updateQuery = { $set: updatePayload };
         await db.collection('acceptedbydeliveries').updateOne(query, updateQuery);
         await db.collection('acceptedorders').updateOne(query, updateQuery);
         await db.collection('orders').updateOne(query, updateQuery);
