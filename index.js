@@ -712,9 +712,40 @@ app.post('/api/acceptedorders/:id/accept', async (req, res) => {
     }
 
     // Check if the order has already been accepted by checking acceptedbydeliveries collection
-    const existing = await db.collection('acceptedbydeliveries').findOne({ orderId: order.orderId });
+    const existing = await db.collection('acceptedbydeliveries').findOne({
+      $or: [
+        { orderId: order.orderId },
+        { originalOrderId: order._id.toString() }
+      ]
+    });
     if (existing) {
-      return res.status(409).json({ message: 'Order has already been accepted by another delivery partner' });
+      return res.status(409).json({ message: 'sorry the order was already accepted by other delivery boy\n\nbetter luck next time' });
+    }
+
+    // ATOMIC LOCK: Update acceptedorders ONLY if deliveryBoyId does not exist yet
+    const lockResult = await db.collection('acceptedorders').updateOne(
+      {
+        _id: order._id,
+        $or: [
+          { deliveryBoyId: { $exists: false } },
+          { deliveryBoyId: null },
+          { deliveryBoyId: '' }
+        ]
+      },
+      {
+        $set: {
+          deliveryBoyId,
+          deliveryBoyName,
+          deliveryBoyPhone,
+          isAccepted: true,
+          status: 'accepted',
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    if (lockResult.matchedCount === 0) {
+      return res.status(409).json({ message: 'sorry the order was already accepted by other delivery boy\n\nbetter luck next time' });
     }
 
     // Prepare document for acceptedbydeliveries collection preserving ALL order fields
@@ -735,8 +766,12 @@ app.post('/api/acceptedorders/:id/accept', async (req, res) => {
     };
     delete acceptedOrderDoc._id; // Remove original _id so MongoDB creates a new unique ObjectId for acceptedbydeliveries
 
-    // Insert into acceptedbydeliveries
-    await db.collection('acceptedbydeliveries').insertOne(acceptedOrderDoc);
+    // Insert into acceptedbydeliveries using atomic upsert to prevent duplicate documents
+    await db.collection('acceptedbydeliveries').updateOne(
+      { orderId: order.orderId },
+      { $setOnInsert: acceptedOrderDoc },
+      { upsert: true }
+    );
 
     // Update the order in acceptedorders with the delivery boy details
     await db.collection('acceptedorders').updateOne(
