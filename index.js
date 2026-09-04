@@ -1394,7 +1394,6 @@ app.post('/api/payment/verify-doorstep-pay', async (req, res) => {
   }
 });
 
-// POST /api/payment/razorpay-webhook - Razorpay Webhook Event Receiver
 app.post(['/api/payment/razorpay-webhook', '/api/payment/webhook'], async (req, res) => {
   try {
     const payload = req.body || {};
