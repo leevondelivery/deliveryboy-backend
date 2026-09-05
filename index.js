@@ -277,20 +277,76 @@ app.post('/api/deliveryboy/signup', async (req, res) => {
   }
 });
 
-// Check if phone number exists in deliveryboyusers collection
+// Check if phone number or email exists in deliveryboyusers or PendingUser collection
 app.post('/api/deliveryboy/check-phone', async (req, res) => {
   try {
-    const { phone } = req.body;
-    if (!phone) {
-      return res.status(400).json({ success: false, message: 'Phone number is required' });
+    const { phone, email } = req.body;
+    if (!phone && !email) {
+      return res.status(400).json({ success: false, message: 'Phone number or email is required' });
     }
 
-    const user = await User.findOne(getPhoneQuery(phone));
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'Phone number not found.' });
+    let existingPhoneUser = null;
+    let existingEmailUser = null;
+    let existingPendingPhoneUser = null;
+    let existingPendingEmailUser = null;
+
+    if (phone) {
+      existingPhoneUser = await User.findOne(getPhoneQuery(phone));
+      existingPendingPhoneUser = await PendingUser.findOne(getPhoneQuery(phone));
     }
 
-    return res.status(200).json({ success: true, message: 'Phone number verified.' });
+    if (email) {
+      const cleanEmail = String(email).trim().toLowerCase();
+      existingEmailUser = await User.findOne({ email: cleanEmail });
+      existingPendingEmailUser = await PendingUser.findOne({ email: cleanEmail });
+    }
+
+    if (existingPhoneUser || existingEmailUser) {
+      let msg = 'Phone number or email is already registered.';
+      if (existingPhoneUser && existingEmailUser) {
+        msg = 'Phone number and email address are already registered.';
+      } else if (existingPhoneUser) {
+        msg = 'Phone number is already registered.';
+      } else if (existingEmailUser) {
+        msg = 'Email address is already registered.';
+      }
+
+      return res.status(200).json({
+        success: true,
+        exists: true,
+        existsPhone: !!existingPhoneUser,
+        existsEmail: !!existingEmailUser,
+        message: msg
+      });
+    }
+
+    if (existingPendingPhoneUser || existingPendingEmailUser) {
+      let msg = 'A registration request with this phone number or email is already pending admin approval.';
+      if (existingPendingPhoneUser && existingPendingEmailUser) {
+        msg = 'A registration request with this phone number and email is already pending admin approval.';
+      } else if (existingPendingPhoneUser) {
+        msg = 'A registration request with this phone number is already pending admin approval.';
+      } else if (existingPendingEmailUser) {
+        msg = 'A registration request with this email is already pending admin approval.';
+      }
+
+      return res.status(200).json({
+        success: true,
+        exists: true,
+        isPending: true,
+        existsPhone: !!existingPendingPhoneUser,
+        existsEmail: !!existingPendingEmailUser,
+        message: msg
+      });
+    }
+
+    return res.status(404).json({
+      success: false,
+      exists: false,
+      existsPhone: false,
+      existsEmail: false,
+      message: 'Phone number not found.'
+    });
   } catch (error) {
     console.error('Check phone error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
