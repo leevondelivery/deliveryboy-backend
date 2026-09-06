@@ -973,6 +973,60 @@ app.post('/api/acceptedbydeliveries/:id/complete', async (req, res) => {
 
     await db.collection('finalcompletedorders').insertOne(completedDoc);
 
+    // Award customer coins upon successful order completion into finalcompletedorders
+    try {
+      let earnedCoins = Number(completedDoc.coinsEarned || completedDoc.coins || 0);
+      const targetUserId = completedDoc.userId;
+
+      if (earnedCoins === 0 && targetUserId) {
+        const feesConfig = await db.collection('feesconfigs').findOne({ key: 'global' });
+        if (feesConfig && feesConfig.isCoinsActive !== false) {
+          const subTotal = Number(completedDoc.totalPrice || completedDoc.grandTotal || 0);
+          const cMin = Number(feesConfig.coinMinOrderAmount ?? 200);
+          const cBase = Number(feesConfig.coinBaseAmount ?? 10);
+          const cStep = Number(feesConfig.coinStepAmount ?? 100);
+          const cStepVal = Number(feesConfig.coinStepValue ?? 5);
+          const cMax = Number(feesConfig.coinMaxLimit ?? 100);
+          const cMaxOrder = Number(feesConfig.coinMaxThreshold ?? 1000);
+
+          if (subTotal >= cMaxOrder) {
+            earnedCoins = cMax;
+          } else if (subTotal >= cMin) {
+            earnedCoins = cBase + Math.floor((subTotal - cMin) / cStep) * cStepVal;
+            earnedCoins = Math.min(earnedCoins, cMax);
+          }
+        }
+      }
+
+      if (earnedCoins > 0 && targetUserId) {
+        let userQuery = {};
+        if (mongoose.Types.ObjectId.isValid(targetUserId)) {
+          userQuery = { $or: [{ _id: new mongoose.Types.ObjectId(targetUserId) }, { _id: String(targetUserId) }] };
+        } else {
+          userQuery = { _id: String(targetUserId) };
+        }
+
+        const coinTransaction = {
+          transactionId: `COIN_REWARD_${completedDoc.orderId || completedDoc._id || Date.now()}`,
+          noofcoins: earnedCoins,
+          type: 'CREDIT',
+          description: `Coins earned for completed order #${completedDoc.orderId || ''}`,
+          createdAt: new Date()
+        };
+
+        const coinResult = await db.collection('users').updateOne(
+          userQuery,
+          {
+            $inc: { coins: earnedCoins },
+            $push: { transactionofcoins: coinTransaction }
+          }
+        );
+        console.log(`[Coins Awarded] Successfully added ${earnedCoins} coins to user ${targetUserId}. Modified count: ${coinResult.modifiedCount}`);
+      }
+    } catch (coinAwardErr) {
+      console.error('[Coins Awarding Error on Order Completion]:', coinAwardErr);
+    }
+
     // Delete from acceptedbydeliveries
     await db.collection('acceptedbydeliveries').deleteOne(query);
 
