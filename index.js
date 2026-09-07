@@ -145,6 +145,9 @@ const userSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: false }, // Syncs active/inactive state
     isBlocked: { type: Boolean, default: false }, // Explicit block status set by admin
     pushToken: { type: String }, // For FCM push notification
+    termsAndConditionsAccepted: { type: Boolean, default: true },
+    termsAndConditionsAcceptedAt: { type: Date, default: Date.now },
+    termsAndConditionsVersion: { type: String, default: '1.0' },
   },
   {
     timestamps: true, // Handles createdAt and updatedAt automatically
@@ -173,6 +176,9 @@ const pendingUserSchema = new mongoose.Schema(
     accountNumber: { type: String },
     ifscCode: { type: String },
     isActive: { type: Boolean, default: false },
+    termsAndConditionsAccepted: { type: Boolean, default: true },
+    termsAndConditionsAcceptedAt: { type: Date, default: Date.now },
+    termsAndConditionsVersion: { type: String, default: '1.0' },
   },
   {
     timestamps: true,
@@ -217,7 +223,10 @@ app.post('/api/deliveryboy/signup', async (req, res) => {
       licenseUrl,
       licenseNumber,
       accountNumber,
-      ifscCode
+      ifscCode,
+      termsAndConditionsAccepted,
+      termsAndConditionsAcceptedAt,
+      termsAndConditionsVersion
     } = req.body;
 
     const actualPhotoUrl = profilePicUrl || photoUrl || deliveryBoyPhotoUrl || photo || '';
@@ -263,7 +272,10 @@ app.post('/api/deliveryboy/signup', async (req, res) => {
       licenseNumber,
       accountNumber,
       ifscCode,
-      isActive: false // Keep it false initially
+      isActive: false, // Keep it false initially
+      termsAndConditionsAccepted: termsAndConditionsAccepted !== undefined ? termsAndConditionsAccepted : true,
+      termsAndConditionsAcceptedAt: termsAndConditionsAcceptedAt ? new Date(termsAndConditionsAcceptedAt) : new Date(),
+      termsAndConditionsVersion: termsAndConditionsVersion || '1.0'
     });
 
     await pendingUser.save();
