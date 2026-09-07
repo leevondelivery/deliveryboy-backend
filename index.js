@@ -868,9 +868,42 @@ app.get('/api/deliveryboy/:id/activeorder', async (req, res) => {
   try {
     const deliveryBoyId = req.params.id;
     const db = getDb();
-    const activeOrder = await db.collection('acceptedbydeliveries').findOne({ deliveryBoyId });
+    let activeOrder = await db.collection('acceptedbydeliveries').findOne({ deliveryBoyId });
     if (!activeOrder) {
       return res.status(404).json({ message: 'No active order found' });
+    }
+
+    // Sync status check from acceptedorders / acceptedbyrestorents / orderstatuses
+    if (!activeOrder.isReady && activeOrder.status !== 'Ready') {
+      const orderQuery = {
+        $or: [
+          ...(activeOrder._id ? [{ _id: activeOrder._id }] : []),
+          ...(activeOrder.orderId ? [{ orderId: activeOrder.orderId }] : [])
+        ]
+      };
+      if (orderQuery.$or.length > 0) {
+        const [accOrd, statusOrd] = await Promise.all([
+          db.collection('acceptedorders').findOne(orderQuery),
+          db.collection('orderstatuses').findOne(orderQuery)
+        ]);
+
+        const isReadyNow = Boolean(
+          (accOrd && (accOrd.isReady || accOrd.status === 'Ready' || accOrd.preparationTime === 0)) ||
+          (statusOrd && (statusOrd.status === 'Ready for pickup' || statusOrd.status === 'Ready'))
+        );
+
+        if (isReadyNow) {
+          const readyPayload = {
+            status: 'Ready',
+            orderStatus: 'Ready',
+            isReady: true,
+            preparationTime: 0,
+            readyAt: (accOrd && accOrd.readyAt) || (statusOrd && statusOrd.updatedAt) || new Date()
+          };
+          Object.assign(activeOrder, readyPayload);
+          await db.collection('acceptedbydeliveries').updateOne({ _id: activeOrder._id }, { $set: readyPayload });
+        }
+      }
     }
     return res.status(200).json(activeOrder);
   } catch (error) {
