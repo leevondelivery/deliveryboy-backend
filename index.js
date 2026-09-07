@@ -921,6 +921,8 @@ app.post('/api/acceptedbydeliveries/:id/pickup', async (req, res) => {
     let query = {};
     if (mongoose.Types.ObjectId.isValid(orderId)) {
       query = { _id: new mongoose.Types.ObjectId(orderId) };
+    } else if (!isNaN(Number(orderId))) {
+      query = { $or: [{ orderId: orderId }, { orderId: Number(orderId) }] };
     } else {
       query = { orderId: orderId };
     }
@@ -930,15 +932,24 @@ app.post('/api/acceptedbydeliveries/:id/pickup', async (req, res) => {
       return res.status(404).json({ message: 'Active order not found' });
     }
 
+    const payMethod = String(order.paymentMethod || order.payment_method || '').toUpperCase().trim();
+    const isCod = payMethod === 'COD' || payMethod === 'CASH' || payMethod === 'CASH_ON_DELIVERY' || payMethod === '';
+    const currentPayStatus = String(order.paymentStatus || order.payment_status || '').toLowerCase().trim();
+
+    const updateFields = {
+      status: 'out for delivery',
+      updatedAt: new Date()
+    };
+
+    if (isCod && currentPayStatus !== 'paid' && currentPayStatus !== 'success') {
+      updateFields.isPaid = false;
+      updateFields.paymentStatus = 'Pending';
+    }
+
     // Update status in acceptedbydeliveries to 'out for delivery'
     await db.collection('acceptedbydeliveries').updateOne(
       query,
-      {
-        $set: {
-          status: 'out for delivery',
-          updatedAt: new Date()
-        }
-      }
+      { $set: updateFields }
     );
 
     // Update status in orderstatuses to 'out for delivery'
@@ -1417,7 +1428,10 @@ app.post('/api/payment/generate-qr', async (req, res) => {
 
   try {
     const db = mongoose.connection.db || getDb();
-    let query = { $or: [{ orderId: orderId }, { razorpayOrderId: orderId }, { razorpayQrId: orderId }] };
+    let query = { $or: [{ orderId: orderId }, { razorpayOrderId: orderId }, { razorpayQrId: orderId }, { doorstepCfOrderId: orderId }] };
+    if (!isNaN(Number(orderId))) {
+      query.$or.push({ orderId: Number(orderId) });
+    }
     if (mongoose.Types.ObjectId.isValid(orderId)) {
       query.$or.push({ _id: new mongoose.Types.ObjectId(orderId) });
     }
@@ -1456,6 +1470,9 @@ app.get('/api/payment/verify-doorstep-pay/:orderId', async (req, res) => {
   try {
     const db = mongoose.connection.db || getDb();
     let query = { $or: [{ orderId: orderId }, { razorpayOrderId: orderId }, { doorstepCfOrderId: orderId }, { razorpayQrId: orderId }] };
+    if (!isNaN(Number(orderId))) {
+      query.$or.push({ orderId: Number(orderId) });
+    }
     if (mongoose.Types.ObjectId.isValid(orderId)) {
       query.$or.push({ _id: new mongoose.Types.ObjectId(orderId) });
     }
